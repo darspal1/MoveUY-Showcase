@@ -1,0 +1,1379 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MoveUY API",
+    "version": "1.0.0",
+    "description": "Backend de **MoveUY**, app de transporte público de Montevideo.\n\nCombina GPS de la flota IMM, GTFS estático, OpenTripPlanner 2 y un motor propio de ETA + alertas.\n\n### Alertas (`alertType`)\nNo se deciden en el cliente. El backend clasifica cada bus en vivo y Flutter solo pinta:\n\n| `alertType` | UI | Cuándo |\n|---|---|---|\n| `GOOD_SERVICE` | verde | en ruta, sin tapón ni desvío |\n| `DELAYED` | ámbar + coches | embotellamiento real (lento + lejos de parada + perdiendo tiempo vs GTFS) |\n| `DETOUR` | rojo | > 150 m de la shape de la variante |\n\nUn bus atrasado pero circulando normal **no** muestra tráfico: esa demora ya está en los minutos de ETA.\n\n### Rate limits\n- `/api/eta` · 60 req/min\n- `/api/ruta` · 10 req/min\n- `/api/places` · 20 req/min\n\nZona horaria: `America/Montevideo`. Coordenadas: WGS84.",
+    "contact": {
+      "name": "MoveUY",
+      "url": "https://api.moveuy.com/docs"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.moveuy.com",
+      "description": "Producción"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Salud",
+      "description": "Estado del proceso."
+    },
+    {
+      "name": "Buscar",
+      "description": "Calles IMM y Google Places."
+    },
+    {
+      "name": "Paradas",
+      "description": "Paradas cercanas y tablero del día."
+    },
+    {
+      "name": "ETA",
+      "description": "Poll de arribos en vivo + alertas."
+    },
+    {
+      "name": "Ruta",
+      "description": "Planificador A→B (OTP2 + ETA IMM)."
+    },
+    {
+      "name": "Líneas",
+      "description": "Catálogo IMM + shape GTFS."
+    },
+    {
+      "name": "Cortes",
+      "description": "Cortes de calle IMM matcheados a líneas GTFS."
+    },
+    {
+      "name": "Interno",
+      "description": "Feeds para OTP2. No usar desde la app."
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Salud"
+        ],
+        "summary": "Health check",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Proceso activo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "estado": {
+                      "type": "string",
+                      "example": "activo"
+                    },
+                    "mensaje": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/buscar": {
+      "get": {
+        "tags": [
+          "Buscar"
+        ],
+        "summary": "Buscar calle o lugar (IMM)",
+        "operationId": "buscarLugares",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            },
+            "example": "Zabala 1386",
+            "description": "Calle, opcionalmente con número de puerta."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultados IMM + puerta detectada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "busquedaOriginal": {
+                      "type": "string"
+                    },
+                    "calleDetectada": {
+                      "type": "string"
+                    },
+                    "puertaDetectada": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "resultados": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/places/autocomplete": {
+      "get": {
+        "tags": [
+          "Buscar"
+        ],
+        "summary": "Autocompletar dirección (Google Places)",
+        "operationId": "placesAutocomplete",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            },
+            "example": "Plaza Independencia"
+          },
+          {
+            "name": "sessionToken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Token de sesión Places para agrupar autocomplete + details."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sugerencias sesgadas a Montevideo (~30 km).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlaceSuggestion"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/places/details": {
+      "get": {
+        "tags": [
+          "Buscar"
+        ],
+        "summary": "Detalle de un place (lat/lon)",
+        "operationId": "placesDetails",
+        "parameters": [
+          {
+            "name": "placeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionToken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coordenadas WGS84.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/geocode-inverso": {
+      "get": {
+        "tags": [
+          "Buscar"
+        ],
+        "summary": "Geocodificación inversa (IMM)",
+        "operationId": "geocodeInverso",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "example": -34.9058
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "example": -56.1913
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vía + número de puerta más cercanos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "descripcion": {
+                      "type": "string"
+                    },
+                    "via": {
+                      "type": "integer"
+                    },
+                    "numero": {
+                      "type": "integer"
+                    },
+                    "paramOrigen": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "example": [
+                        1234,
+                        1386
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/paradas-cercanas": {
+      "get": {
+        "tags": [
+          "Paradas"
+        ],
+        "summary": "Paradas cercanas con próximos buses y alertas",
+        "operationId": "paradasCercanas",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "example": -34.9058
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "example": -56.1913
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1
+            },
+            "description": "Máximo de paradas (ya ordenadas por distancia)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paradas habilitadas + buses (con alertType).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NearbyStop"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/parada/{id}/arribos-dia": {
+      "get": {
+        "tags": [
+          "Paradas"
+        ],
+        "summary": "Tablero del resto del día + overlay en vivo",
+        "operationId": "arribosDia",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "4771",
+            "description": "ID de parada IMM/GTFS."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`proximos` = horizonte live; `arribos` = GTFS del día con overlay de alertas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stopId": {
+                      "type": "string",
+                      "example": "4771"
+                    },
+                    "nombre": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "lat": {
+                      "type": "number",
+                      "nullable": true
+                    },
+                    "lon": {
+                      "type": "number",
+                      "nullable": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "proximos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BusArrival"
+                      }
+                    },
+                    "arribos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BusArrival"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/eta": {
+      "post": {
+        "tags": [
+          "ETA"
+        ],
+        "summary": "Poll de ETA en vivo (alertas incluidas)",
+        "description": "El cliente Flutter lo llama ~cada 15 s. No replanifica OTP: solo arribos + `alertType`.\n\nDELAYED exige evidencia de embotellamiento (velocidad, distancia a parada y atraso GTFS). Un delay alto sin esas tres condiciones no pinta tráfico.",
+        "operationId": "postEta",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "paradas"
+                ],
+                "properties": {
+                  "paradas": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "parada"
+                      ],
+                      "properties": {
+                        "parada": {
+                          "type": "string",
+                          "example": "4771"
+                        },
+                        "variantes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "2409"
+                          ]
+                        },
+                        "circular": {
+                          "type": "boolean",
+                          "default": false
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "paradas": [
+                  {
+                    "parada": "4771",
+                    "variantes": [
+                      "2409"
+                    ],
+                    "circular": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch por paradaId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EtaBatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/ruta": {
+      "post": {
+        "tags": [
+          "Ruta"
+        ],
+        "summary": "Planificar viaje A→B",
+        "description": "OTP2 genera itinerarios; el backend enriquece el primer tramo BUS con ETA en vivo, alertas, geometría IMM/GTFS y filtro de caminatas (access/transfer/egress).",
+        "operationId": "postRuta",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RutaRequest"
+              },
+              "example": {
+                "origen": {
+                  "lat": -34.9058,
+                  "lon": -56.1913
+                },
+                "destino": {
+                  "lat": -34.9135,
+                  "lon": -56.152
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Opciones ordenadas (puede ser `opciones: []`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origen": {
+                      "$ref": "#/components/schemas/LatLon"
+                    },
+                    "destino": {
+                      "$ref": "#/components/schemas/LatLon"
+                    },
+                    "opciones": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RutaOpcion"
+                      }
+                    },
+                    "generadoEn": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/lineas": {
+      "get": {
+        "tags": [
+          "Líneas"
+        ],
+        "summary": "Catálogo de líneas por empresa",
+        "operationId": "listLineas",
+        "responses": {
+          "200": {
+            "description": "Variantes IMM con geometría GTFS, agrupadas por empresa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "empresas": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "empresaId": {
+                            "type": "integer",
+                            "example": 50
+                          },
+                          "empresaNombre": {
+                            "type": "string",
+                            "example": "CUTCSA"
+                          },
+                          "variantes": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/LineaVariant"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/lineas/{lineVariantId}": {
+      "get": {
+        "tags": [
+          "Líneas"
+        ],
+        "summary": "Detalle de variante: shape + paradas",
+        "operationId": "getLineaDetail",
+        "parameters": [
+          {
+            "name": "lineVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "2409"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorrido y destinos hermanos de la misma línea comercial.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/LineaVariant"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reverseVariantId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "reverseVariantIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "destinos": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "shapeSource": {
+                          "type": "string",
+                          "enum": [
+                            "gtfs",
+                            "stops",
+                            "none"
+                          ]
+                        },
+                        "shape": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/LatLon"
+                          }
+                        },
+                        "stops": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "stopId": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "lat": {
+                                "type": "number"
+                              },
+                              "lon": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/api/cortes": {
+      "get": {
+        "tags": [
+          "Cortes"
+        ],
+        "summary": "Cortes de calle activos",
+        "operationId": "getCortes",
+        "parameters": [
+          {
+            "name": "linea",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "183",
+            "description": "Filtra cortes que afectan esa línea comercial."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista + stats del poller KML IMM.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "cortes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cortes/lineas": {
+      "get": {
+        "tags": [
+          "Cortes"
+        ],
+        "summary": "Líneas afectadas por cortes",
+        "operationId": "getCortesLineas",
+        "responses": {
+          "200": {
+            "description": "Agregado línea → tramos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cortes/resumen": {
+      "get": {
+        "tags": [
+          "Cortes"
+        ],
+        "summary": "Resumen compacto de cortes",
+        "operationId": "getCortesResumen",
+        "responses": {
+          "200": {
+            "description": "Conteos + lineasAfectadas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gtfs-rt/status": {
+      "get": {
+        "tags": [
+          "Interno"
+        ],
+        "summary": "Estado de los feeds GTFS-RT (debug)",
+        "operationId": "gtfsRtStatus",
+        "description": "JSON de diagnóstico del poller. Los feeds protobuf (`/trip-updates`, `/vehicle-positions`) los consume OTP2, no la app Flutter.",
+        "responses": {
+          "200": {
+            "description": "Contadores y edad de los buffers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlertType": {
+        "type": "string",
+        "enum": [
+          "GOOD_SERVICE",
+          "DELAYED",
+          "DETOUR"
+        ],
+        "description": "Clasificación operacional del bus (backend, no Flutter).\n\n- `GOOD_SERVICE`: en ruta, sin embotellamiento ni desvío.\n- `DELAYED`: tráfico real (ámbar + ícono de coches). Exige a la vez: velocidad < 8 km/h, a más de 120 m de toda parada de la secuencia, y atraso GTFS > 120 s. Un atraso de línea a velocidad normal **no** dispara DELAYED: esa demora ya la absorbe el ETA en vivo.\n- `DETOUR`: fuera de la shape GTFS (> 150 m). Prioridad máxima: el rojo corta antes de evaluar tráfico.\n\nGPS LOW (timestamp ≥ 240 s) o sin GPS: no se evalúa alerta (queda GOOD_SERVICE / SCHEDULED). AlertSmoother aplica histéresis: 2 polls para activar, 3 para bajar."
+      },
+      "GpsAccuracy": {
+        "type": "string",
+        "nullable": true,
+        "enum": [
+          "HIGH",
+          "MEDIUM",
+          "LOW",
+          null
+        ],
+        "description": "Edad del timestamp GPS IMM. HIGH < 120 s, MEDIUM < 240 s, LOW ≥ 240 s. null en arribos programados (sin GPS)."
+      },
+      "RealtimeState": {
+        "type": "string",
+        "enum": [
+          "SCHEDULED",
+          "UPDATED"
+        ],
+        "description": "`UPDATED` = hay GPS en vivo. `SCHEDULED` = horario teórico (GTFS/OTP2). Las alertas DELAYED/DETOUR solo son válidas con UPDATED."
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "Código estable (Places, rate limit)."
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "LatLon": {
+        "type": "object",
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "properties": {
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "example": -34.9058
+          },
+          "lon": {
+            "type": "number",
+            "format": "double",
+            "example": -56.1913
+          }
+        }
+      },
+      "BusArrival": {
+        "type": "object",
+        "description": "Arribo a una parada. Los campos de alerta (`alertType`, `desvio`, `delay`, `gpsAccuracy`) los calcula el backend; Flutter solo pinta color/ícono.",
+        "properties": {
+          "linea": {
+            "type": "string",
+            "example": "183"
+          },
+          "destino": {
+            "type": "string",
+            "example": "POCITOS"
+          },
+          "minutos": {
+            "type": "integer",
+            "example": 6
+          },
+          "horaDesc": {
+            "type": "string",
+            "description": "Texto de ETA: \"6 min\", \"Ahora\", o \"HH:MM\" si falta más de ~60 min.",
+            "example": "6 min"
+          },
+          "etaSeconds": {
+            "type": "number",
+            "example": 360
+          },
+          "real": {
+            "type": "boolean",
+            "description": "Alias snake_case de esRealTime."
+          },
+          "esRealTime": {
+            "type": "boolean",
+            "description": "true si hay GPS en vivo."
+          },
+          "variante": {
+            "type": "string",
+            "example": "2409"
+          },
+          "circular": {
+            "type": "boolean"
+          },
+          "idBus": {
+            "type": "string",
+            "nullable": true,
+            "example": "50/1234"
+          },
+          "idEmpresa": {
+            "type": "integer",
+            "nullable": true,
+            "example": 50
+          },
+          "paradaActual": {
+            "type": "string",
+            "nullable": true
+          },
+          "coordenadasBus": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "number"
+            },
+            "description": "[lon, lat] WGS84 si hay GPS."
+          },
+          "accesibilidad": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "description": "Origen del ETA: fleet-seg, fleet-line, fleet-win, otp2, gtfs-day, imm, …",
+            "example": "fleet-seg"
+          },
+          "stopsAway": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4
+          },
+          "stopsAwayDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "realtimeState": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "UPDATED"
+            ],
+            "description": "`UPDATED` = hay GPS en vivo. `SCHEDULED` = horario teórico (GTFS/OTP2). Las alertas DELAYED/DETOUR solo son válidas con UPDATED."
+          },
+          "alertType": {
+            "type": "string",
+            "enum": [
+              "GOOD_SERVICE",
+              "DELAYED",
+              "DETOUR"
+            ],
+            "description": "Clasificación operacional del bus (backend, no Flutter).\n\n- `GOOD_SERVICE`: en ruta, sin embotellamiento ni desvío.\n- `DELAYED`: tráfico real (ámbar + ícono de coches). Exige a la vez: velocidad < 8 km/h, a más de 120 m de toda parada de la secuencia, y atraso GTFS > 120 s. Un atraso de línea a velocidad normal **no** dispara DELAYED: esa demora ya la absorbe el ETA en vivo.\n- `DETOUR`: fuera de la shape GTFS (> 150 m). Prioridad máxima: el rojo corta antes de evaluar tráfico.\n\nGPS LOW (timestamp ≥ 240 s) o sin GPS: no se evalúa alerta (queda GOOD_SERVICE / SCHEDULED). AlertSmoother aplica histéresis: 2 polls para activar, 3 para bajar."
+          },
+          "desvio": {
+            "type": "boolean",
+            "description": "true solo si alertType === DETOUR (fuera de shape)."
+          },
+          "delay": {
+            "type": "number",
+            "description": "Atraso firmado vs GTFS (segundos). Alineado al alertType suavizado: no usar este número en Flutter para decidir color; usar alertType.",
+            "example": 45
+          },
+          "gpsAccuracy": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW",
+              null
+            ],
+            "description": "Edad del timestamp GPS IMM. HIGH < 120 s, MEDIUM < 240 s, LOW ≥ 240 s. null en arribos programados (sin GPS)."
+          },
+          "gpsAgeSec": {
+            "type": "number",
+            "nullable": true
+          },
+          "gpsTimestamp": {
+            "type": "string",
+            "nullable": true
+          },
+          "etaSource": {
+            "type": "string",
+            "nullable": true,
+            "example": "fleet-seg"
+          }
+        }
+      },
+      "EtaBatch": {
+        "type": "object",
+        "description": "Mapa paradaId → buckets por circular (`false` / `true`) con arrays de BusArrival. `_otp2Fallback` indica si se rellenó con horarios OTP2.",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "false": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/BusArrival"
+              }
+            },
+            "true": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/BusArrival"
+              }
+            },
+            "_otp2Fallback": {
+              "type": "boolean"
+            }
+          }
+        },
+        "example": {
+          "4771": {
+            "false": [
+              {
+                "linea": "183",
+                "destino": "POCITOS",
+                "minutos": 6,
+                "horaDesc": "6 min",
+                "etaSeconds": 360,
+                "real": true,
+                "esRealTime": true,
+                "variante": "2409",
+                "realtimeState": "UPDATED",
+                "alertType": "GOOD_SERVICE",
+                "desvio": false,
+                "delay": 12,
+                "gpsAccuracy": "HIGH",
+                "source": "fleet-seg"
+              }
+            ],
+            "true": [],
+            "_otp2Fallback": false
+          }
+        }
+      },
+      "NearbyStop": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 4771
+          },
+          "nombre": {
+            "type": "string",
+            "example": "Juncal y Sarandi"
+          },
+          "lat": {
+            "type": "number",
+            "example": -34.9058
+          },
+          "lng": {
+            "type": "number",
+            "example": -56.1913
+          },
+          "distanciaMetros": {
+            "type": "integer",
+            "example": 85
+          },
+          "deshabilitada": {
+            "type": "boolean"
+          },
+          "buses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BusArrival"
+            }
+          }
+        }
+      },
+      "PlaceSuggestion": {
+        "type": "object",
+        "properties": {
+          "placeId": {
+            "type": "string",
+            "example": "ChIJu46S-ZCtfpYRPbW7nGXUMUk"
+          },
+          "name": {
+            "type": "string",
+            "example": "Plaza Independencia"
+          },
+          "label": {
+            "type": "string",
+            "example": "Plaza Independencia, Montevideo, Uruguay"
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "address",
+              "street",
+              "venue",
+              "locality"
+            ]
+          }
+        }
+      },
+      "PlaceDetails": {
+        "type": "object",
+        "properties": {
+          "placeId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number",
+            "example": -34.9065
+          },
+          "lon": {
+            "type": "number",
+            "example": -56.1996
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "address",
+              "street",
+              "venue",
+              "locality"
+            ]
+          }
+        }
+      },
+      "LineaVariant": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "type": "string",
+            "example": "183"
+          },
+          "lineVariantId": {
+            "type": "string",
+            "example": "2409"
+          },
+          "origin": {
+            "type": "string",
+            "nullable": true
+          },
+          "destination": {
+            "type": "string",
+            "nullable": true,
+            "example": "POCITOS"
+          },
+          "subline": {
+            "type": "string",
+            "nullable": true
+          },
+          "special": {
+            "type": "boolean"
+          },
+          "empresaId": {
+            "type": "integer",
+            "example": 50
+          },
+          "empresaNombre": {
+            "type": "string",
+            "example": "CUTCSA"
+          }
+        }
+      },
+      "RutaRequest": {
+        "type": "object",
+        "required": [
+          "origen",
+          "destino"
+        ],
+        "properties": {
+          "origen": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "destino": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "dateTime": {
+            "type": "string",
+            "description": "ISO local `YYYY-MM-DDTHH:mm:ss`. Si se omite, usa ahora (America/Montevideo).",
+            "example": "2026-08-18T12:30:00"
+          }
+        }
+      },
+      "RutaOpcion": {
+        "type": "object",
+        "properties": {
+          "duracionTotalSegundos": {
+            "type": "integer",
+            "example": 1420
+          },
+          "startTime": {
+            "type": "integer",
+            "description": "Epoch ms"
+          },
+          "endTime": {
+            "type": "integer",
+            "description": "Epoch ms"
+          },
+          "detallesBus": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "linea": {
+                "type": "string",
+                "example": "183"
+              },
+              "varianteId": {
+                "type": "string",
+                "example": "2409"
+              },
+              "lineas": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "variantes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "paradaOrigenId": {
+                "type": "string",
+                "example": "4771"
+              },
+              "paradaOrigenNombre": {
+                "type": "string"
+              },
+              "destinoCartel": {
+                "type": "string",
+                "example": "POCITOS"
+              }
+            }
+          },
+          "proximosBuses": {
+            "$ref": "#/components/schemas/EtaBatch"
+          },
+          "geometria": {
+            "type": "object",
+            "nullable": true,
+            "description": "GeoJSON LineString WGS84 [lon, lat]."
+          },
+          "tramosCompletos": {
+            "type": "array",
+            "description": "Legs OTP2 (WALK / BUS) enriquecidos.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Parámetros inválidos o faltantes.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Recurso no encontrado.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit del endpoint.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody"
+            }
+          }
+        }
+      },
+      "BadGateway": {
+        "description": "Fallo de un upstream (IMM, OTP2, Places).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody"
+            }
+          }
+        }
+      }
+    }
+  }
+}
