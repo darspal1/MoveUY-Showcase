@@ -15,7 +15,6 @@
   <img src="https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
   <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Express-5.x-000000?style=for-the-badge&logo=express&logoColor=white" alt="Express" />
-  <img src="https://img.shields.io/badge/Mapbox-Maps_%26_Navigation-000000?style=for-the-badge&logo=mapbox&logoColor=white" alt="Mapbox" />
   <img src="https://img.shields.io/badge/OpenTripPlanner-2.x-FFA500?style=for-the-badge&logo=openstreetmap&logoColor=black" alt="OpenTripPlanner 2" />
 </p>
 
