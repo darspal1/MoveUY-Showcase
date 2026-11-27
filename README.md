@@ -10,19 +10,20 @@
 </p>
 
 <p align="center">
-  <a href="https://api.moveuy.com/docs"><img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/swagger.png" alt="Swagger Docs" /></a>
+  <a href="https://api.moveuy.com/docs"><img src="https://img.shields.io/badge/Swagger-API_Docs-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Swagger Docs" /></a>
   <img src="https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
   <img src="https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
-  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Express-5.x-000000?style=for-the-badge&logo=express&logoColor=white" alt="Express" />
-  <img src="https://img.shields.io/badge/Mapbox-GL_&_Navigation-000000?style=for-the-badge&logo=mapbox&logoColor=white" alt="Mapbox" />
-  <img src="https://img.shields.io/badge/OpenTripPlanner-2.x-FFA500?style=for-the-badge&logo=openstreetmap&logoColor=black" alt="OTP2" />
+  <img src="https://img.shields.io/badge/Mapbox-Maps_%26_Navigation-000000?style=for-the-badge&logo=mapbox&logoColor=white" alt="Mapbox" />
+  <img src="https://img.shields.io/badge/OpenTripPlanner-2.x-FFA500?style=for-the-badge&logo=openstreetmap&logoColor=black" alt="OpenTripPlanner 2" />
 </p>
 
 ---
 
 > [!NOTE]
-> ### 🏛️ Vitrina Técnica y Estudio de Arquitectura (*Showcase Repo*)
+> **🏛️ Vitrina Técnica y Estudio de Arquitectura (*Showcase Repo*)**
+>
 > Este repositorio constituye la **vitrina pública, especificación de arquitectura y documentación técnica** del ecosistema MoveUY.
 > Para proteger la propiedad intelectual y los algoritmos propietarios de cálculo telemétrico, el código fuente completo del backend y de la aplicación móvil se mantiene en un repositorio privado. La **demostración técnica en vivo del código y arquitectura** se encuentra disponible a solicitud durante procesos de selección técnica o entrevistas.
 
@@ -78,28 +79,28 @@ El ecosistema MoveUY sigue una arquitectura desacoplada y orientada a microservi
 ```mermaid
 flowchart TD
     subgraph Fuentes_Externas ["🌐 Fuentes de Datos Externas"]
-        IMM["📡 IMM Open Data & APIs\n(GPS Flota STM en Vivo)"]
-        GTFS_DATA["📁 GTFS Estático STM\n(Horarios, Rutas, Paradas, Shapes)"]
-        CORTES["🚧 IMM Cortes de Calle\n(KML/KMZ Live Feeds)"]
-        GOOGLE["🗺️ Google Places API\n(Autocomplete & Details)"]
+        IMM["📡 IMM Open Data & APIs<br/>(GPS Flota STM en Vivo)"]
+        GTFS_DATA["📁 GTFS Estático STM<br/>(Horarios, Rutas, Paradas, Shapes)"]
+        CORTES["🚧 IMM Cortes de Calle<br/>(KML/KMZ Live Feeds)"]
+        GOOGLE["🗺️ Google Places API<br/>(Autocomplete & Details)"]
     end
 
     subgraph Backend_Core ["⚙️ MoveUY Backend (Node.js / Express 5)"]
-        ROUTER["API Router & Rate Limiter\n(Helmet, Compression, Rate-Limit)"]
-        
+        ROUTER["API Router & Rate Limiter<br/>(Helmet, Compression, Rate-Limit)"]
+
         subgraph Motores ["Motores de Procesamiento"]
-            OTP2["OpenTripPlanner 2\n(Multimodal Router GraphQL)"]
-            GTFS_RT["GTFS-RT Generator\n(VehiclePositions Protobuf)"]
-            ETA_ENGINE["Motor ETA & Suavizado\n(EtaSmoother + Histéresis)"]
-            ALERT_ENGINE["Clasificador de Alertas\n(GeospatialMatcher)"]
-            CACHE["Caché en Memoria\n(NodeCache multi-nivel)"]
+            OTP2["OpenTripPlanner 2<br/>(Multimodal Router GraphQL)"]
+            GTFS_RT["GTFS-RT Generator<br/>(VehiclePositions Protobuf)"]
+            ETA_ENGINE["Motor ETA & Suavizado<br/>(EtaSmoother + Histéresis)"]
+            ALERT_ENGINE["Clasificador de Alertas<br/>(GeospatialMatcher)"]
+            CACHE["Caché en Memoria<br/>(NodeCache multi-nivel)"]
         end
     end
 
     subgraph Frontend_App ["📱 MoveUY Flutter App (Dart 3)"]
-        STATE["Provider State Management\n(ResultsProvider, JourneyTracker)"]
-        MAPBOX["Mapbox Maps & Navigation SDK\n(GPU Vector Tiles, PiP, Audio)"]
-        UI["Design System Material 3\n(Lottie, SVG, Dynamic Chips)"]
+        STATE["Provider State Management<br/>(ResultsProvider, JourneyTracker)"]
+        MAPBOX["Mapbox Maps & Navigation SDK<br/>(GPU Vector Tiles, PiP, Audio)"]
+        UI["Design System Material 3<br/>(Lottie, SVG, Dynamic Chips)"]
     end
 
     IMM -->|GPS Telemetría| GTFS_RT
@@ -146,7 +147,7 @@ El backend clasifica el estado operacional de cada unidad en vivo para que el cl
 Calculado a partir de la antigüedad del timestamp telemétrico emitido por la unidad:
 - **`HIGH`**: Telemetría emitida hace menos de 120 segundos.
 - **`MEDIUM`**: Telemetría emitida entre 120 y 240 segundos atrás.
-- **`LOW`**: Telemetría emitida hace más de 240 segundos (se descartan alertas DELAYED/DETOUR por posible obsolescencia).
+- **`LOW`**: Telemetría emitida hace más de 240 segundos (se descartan alertas `DELAYED`/`DETOUR` por posible obsolescencia).
 - **`null`**: Arribo teórico programado por horario GTFS (sin unidad física asignada con GPS).
 
 ---
@@ -192,7 +193,7 @@ Calculado a partir de la antigüedad del timestamp telemétrico emitido por la u
 
 #### 3. Radar de Paradas Cercanas
 - **`GET /api/paradas-cercanas?lat={lat}&lon={lon}&radius={metros}`**
-  - **Propósito:** Retorna todas las paradas del sistema en un radio geoespacial (default 500m), con la lista de líneas que sirven en cada una.
+  - **Propósito:** Retorna todas las paradas del sistema en un radio geoespacial (default 500 m), con la lista de líneas que sirven en cada una.
 
 #### 4. Cronograma Teórico Diario
 - **`GET /api/parada/{id}/arribos-dia`**
@@ -260,6 +261,7 @@ MoveUY/
 │   └── package.json               # Dependencias de Node.js
 │
 └── docs/                          # Recursos de Arquitectura y Documentación
+    ├── logo.png                   # Logo de MoveUY (usado en la cabecera del README)
     ├── app-img/                   # Galería de capturas de la GUI móvil (1.jpg - 8.jpg)
     ├── linkedin/                  # Infografía técnica de arquitectura
     └── openapi.json               # Especificación OpenAPI 3 en formato JSON
