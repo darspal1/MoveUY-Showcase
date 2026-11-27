@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://api.moveuy.com/docs"><img src="https://icon.icepanel.io/Technology/svg/Swagger.svg](https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/swagger.png" alt="Swagger Docs" /></a>
+  <a href="https://api.moveuy.com/docs"><img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/swagger.png" alt="Swagger Docs" /></a>
   <img src="https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
   <img src="https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
   <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js" />
